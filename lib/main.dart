@@ -21,6 +21,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -796,7 +797,9 @@ class WingLogoPainter extends CustomPainter {
     // Três curvas fluidas, sobrepostas, lembrando o perfil de uma asa.
     for (int i = 0; i < 3; i++) {
       final offsetY = size.height * (0.30 + i * 0.18);
-      final path = Path()
+      // ui.Path (dart:ui) explícito: latlong2 também exporta uma classe
+      // Path (rota de coordenadas), e o nome colide se não desambiguar.
+      final path = ui.Path()
         ..moveTo(2, offsetY)
         ..quadraticBezierTo(size.width * 0.55, offsetY - 14 - i * 3, size.width - 2,
             offsetY - 2 - i * 6);
