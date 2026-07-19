@@ -60,6 +60,18 @@ jobs:
             echo "Plugin flutter_bluetooth_serial não encontrado no pub-cache (ok se não for usado)."
           fi
 
+      - name: Ajusta compileSdk do app para 36 (exigido pelas dependencias mais novas)
+        run: |
+          GRADLE_FILE="project/android/app/build.gradle"
+          if [ ! -f "$GRADLE_FILE" ]; then
+            GRADLE_FILE="project/android/app/build.gradle.kts"
+          fi
+          echo "Arquivo de build do app: $GRADLE_FILE"
+          sed -i 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 36/' "$GRADLE_FILE"
+          sed -i 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 36/' "$GRADLE_FILE"
+          sed -i 's/compileSdk flutter\.compileSdkVersion/compileSdk 36/' "$GRADLE_FILE"
+          grep -n "compileSdk" "$GRADLE_FILE" || true
+
       - name: Compila o APK final (release, um arquivo por arquitetura)
         working-directory: project
         run: flutter build apk --release --split-per-abi
