@@ -43,6 +43,11 @@ jobs:
         working-directory: project
         run: flutter pub get
 
+      - name: Corrige plugins antigos que ainda usam jcenter() (removido pelo Google)
+        run: |
+          find / -path "*/flutter_bluetooth_serial*/android/build.gradle" 2>/dev/null \
+            -exec sed -i 's/jcenter()/mavenCentral()/g' {} \;
+
       - name: Compila o APK final (release, um arquivo por arquitetura)
         working-directory: project
         run: flutter build apk --release --split-per-abi
