@@ -1,0 +1,54 @@
+name: Build Neon Car Launcher APK
+
+# Roda automaticamente a cada push na branch main, ou manualmente pela aba Actions.
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixa os arquivos enviados por você
+        uses: actions/checkout@v4
+        with:
+          path: payload
+
+      - name: Instala o Flutter (feito pelo próprio GitHub, sem custo)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Gera o esqueleto padrão de um projeto Flutter/Android
+        run: flutter create --org com.neoncar --project-name neon_car_launcher project
+
+      - name: Substitui o esqueleto pelos arquivos personalizados do launcher
+        run: |
+          cp payload/pubspec.yaml project/pubspec.yaml
+          cp payload/lib/main.dart project/lib/main.dart
+          cp payload/AndroidManifest.xml project/android/app/src/main/AndroidManifest.xml
+          rm -rf project/assets
+          cp -r payload/assets project/assets
+
+      - name: Injeta o MainActivity.kt nativo (chamadas e sinal de ré) com o pacote correto
+        run: |
+          GENERATED_MAIN_ACTIVITY=$(find project/android -name "MainActivity.kt" | head -n1)
+          echo "MainActivity gerado em: $GENERATED_MAIN_ACTIVITY"
+          PACKAGE_NAME=$(grep -m1 '^package ' "$GENERATED_MAIN_ACTIVITY" | sed 's/^package //')
+          echo "Pacote detectado: $PACKAGE_NAME"
+          sed "s/__PACKAGE__/$PACKAGE_NAME/" payload/android/MainActivity.kt > "$GENERATED_MAIN_ACTIVITY"
+
+      - name: Baixa as dependências do projeto
+        working-directory: project
+        run: flutter pub get
+
+      - name: Compila o APK final (release, um arquivo por arquitetura)
+        working-directory: project
+        run: flutter build apk --release --split-per-abi
+
+      - name: Publica os APKs prontos para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-car-launcher-apk
+          path: project/build/app/outputs/flutter-apk/*.apk
