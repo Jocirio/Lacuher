@@ -43,10 +43,22 @@ jobs:
         working-directory: project
         run: flutter pub get
 
-      - name: Corrige plugins antigos que ainda usam jcenter() (removido pelo Google)
+      - name: Corrige plugin antigo flutter_bluetooth_serial (jcenter + namespace ausente)
         run: |
-          find "$HOME/.pub-cache" -path "*/flutter_bluetooth_serial*/android/build.gradle" \
-            -exec sed -i 's/jcenter()/mavenCentral()/g' {} \; || true
+          BT_DIR=$(find "$HOME/.pub-cache" -maxdepth 6 -type d -name "flutter_bluetooth_serial-*" | head -n1)
+          if [ -n "$BT_DIR" ]; then
+            echo "Pasta do plugin: $BT_DIR"
+            GRADLE_FILE="$BT_DIR/android/build.gradle"
+            MANIFEST_FILE="$BT_DIR/android/src/main/AndroidManifest.xml"
+            sed -i 's/jcenter()/mavenCentral()/g' "$GRADLE_FILE"
+            if [ -f "$MANIFEST_FILE" ] && ! grep -q "namespace" "$GRADLE_FILE"; then
+              PKG=$(grep -m1 -o 'package="[^"]*"' "$MANIFEST_FILE" | sed 's/package="//;s/"//')
+              echo "Namespace detectado: $PKG"
+              sed -i "/android {/a namespace '$PKG'" "$GRADLE_FILE"
+            fi
+          else
+            echo "Plugin flutter_bluetooth_serial não encontrado no pub-cache (ok se não for usado)."
+          fi
 
       - name: Compila o APK final (release, um arquivo por arquitetura)
         working-directory: project
