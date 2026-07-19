@@ -60,17 +60,25 @@ jobs:
             echo "Plugin flutter_bluetooth_serial não encontrado no pub-cache (ok se não for usado)."
           fi
 
-      - name: Ajusta compileSdk do app para 36 (exigido pelas dependencias mais novas)
+      - name: Ajusta compileSdk para 36 no app e em todos os plugins baixados
         run: |
-          GRADLE_FILE="project/android/app/build.gradle"
-          if [ ! -f "$GRADLE_FILE" ]; then
-            GRADLE_FILE="project/android/app/build.gradle.kts"
-          fi
-          echo "Arquivo de build do app: $GRADLE_FILE"
-          sed -i 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 36/' "$GRADLE_FILE"
-          sed -i 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 36/' "$GRADLE_FILE"
-          sed -i 's/compileSdk flutter\.compileSdkVersion/compileSdk 36/' "$GRADLE_FILE"
-          grep -n "compileSdk" "$GRADLE_FILE" || true
+          FILES=$(find "$HOME/.pub-cache" -maxdepth 8 -type f \( -name "build.gradle" -o -name "build.gradle.kts" \) -path "*/android/*" 2>/dev/null)
+          FILES="$FILES $(find project/android -maxdepth 4 -type f \( -name "build.gradle" -o -name "build.gradle.kts" \) 2>/dev/null)"
+          for f in $FILES; do
+            sed -i -E 's/compileSdkVersion[[:space:]]+flutter\.compileSdkVersion/compileSdkVersion 36/' "$f"
+            sed -i -E 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 36/' "$f"
+            sed -i -E 's/compileSdk[[:space:]]*=[[:space:]]*flutter\.compileSdkVersion/compileSdk = 36/' "$f"
+            sed -i -E 's/compileSdk[[:space:]]*=[[:space:]]*[0-9]+/compileSdk = 36/' "$f"
+            sed -i -E 's/compileSdk[[:space:]]+flutter\.compileSdkVersion/compileSdk 36/' "$f"
+            sed -i -E 's/compileSdk[[:space:]]+[0-9]+/compileSdk 36/' "$f"
+          done
+          echo "Arquivos ajustados para compileSdk 36:"
+          for f in $FILES; do
+            if grep -q "compileSdk" "$f" 2>/dev/null; then
+              echo "$f:"
+              grep -n "compileSdk" "$f"
+            fi
+          done
 
       - name: Compila o APK final (release, um arquivo por arquitetura)
         working-directory: project
