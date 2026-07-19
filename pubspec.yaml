@@ -1,0 +1,81 @@
+name: neon_car_launcher
+description: "Car Launcher premium para multimídia automotiva Android — tema escuro com neon selecionável, velocímetro real via GPS, integração com apps nativos e mapa offline."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # --- Mapa offline (tiles locais em assets/map_tiles/{z}/{x}/{y}.png) ---
+  flutter_map: ^6.2.1
+  latlong2: ^0.9.1
+
+  # --- Velocímetro real via GPS (antena física do veículo) ---
+  geolocator: ^13.0.2
+
+  # --- Integração com apps nativos instalados (Waze, Google Maps, Spotify) ---
+  # Optamos por external_app_launcher em vez de device_apps: o pacote
+  # device_apps está sem manutenção há anos e ainda usa o embedding Android
+  # v1, o que quebra builds em versões recentes do Flutter. Se quiser listar
+  # todos os apps instalados (não só abrir os 3 fixos), troque por
+  # `installed_apps` (fork ativo com a mesma finalidade de device_apps).
+  external_app_launcher: ^4.0.2
+
+  # --- Gerenciador de conectividade (Wi-Fi / status de rede) ---
+  connectivity_plus: ^6.1.0
+
+  # --- Gerenciador de conectividade (Bluetooth real: ligado/desligado, conexão) ---
+  flutter_blue_plus: ^1.35.3
+
+  # --- Permissões em runtime (GPS, Bluetooth) ---
+  permission_handler: ^11.3.1
+
+  # --- Persistência da preferência de cor neon e da pasta de mapas ---
+  shared_preferences: ^2.3.3
+
+  # --- Seleção de pasta externa (SD/pendrive) com tiles de mapa ---
+  # Permite trocar/ampliar a cobertura do mapa offline (ex: de Mato Grosso
+  # para o Brasil inteiro) sem recompilar o app.
+  file_picker: ^8.1.6
+
+  # --- Leitor OBD-II via Bluetooth clássico (adaptador ELM327) ---
+  # RPM, temperatura do motor, nível de combustível e códigos de erro reais,
+  # lidos direto da central eletrônica do carro (porta OBD-II, pós-1996).
+  flutter_bluetooth_serial: ^0.4.0
+
+  # --- Detecção de chamada tocando, para viva-voz sem precisar do
+  # CarPlay/Android Auto ---
+  phone_state: ^3.0.1
+
+  # --- Câmera de ré (quando a central expõe a entrada de vídeo via CameraX) ---
+  camera: ^0.11.0+2
+
+  # --- Histórico local de viagens (banco de dados no próprio aparelho,
+  # sem nuvem) ---
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Estrutura de assets do app.
+  # Os tiles de mapa offline devem seguir o padrão de pastas:
+  # assets/map_tiles/{z}/{x}/{y}.png  (z = zoom, x = coluna, y = linha)
+  #
+  # IMPORTANTE: a pasta assets/map_tiles/ precisa existir fisicamente e
+  # conter pelo menos um arquivo antes de rodar `flutter pub get` /
+  # `flutter build apk` — pastas vazias fazem o build falhar. Veja o
+  # README.md para instruções de como popular os tiles.
+  assets:
+    - assets/map_tiles/
