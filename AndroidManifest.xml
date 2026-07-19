@@ -101,10 +101,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- >>> INTERCEPTAÇÃO DO BOTÃO HOME <
-                 Esta é a categoria que faz o app se registrar como
-                 "tela inicial" da multimídia, concorrendo com (ou
-                 substituindo) o launcher padrão do sistema. -->
+            <!-- INTERCEPTACAO DO BOTAO HOME:
+                 Esta e a categoria que faz o app se registrar como
+                 tela inicial da multimidia, concorrendo com (ou
+                 substituindo) o launcher padrao do sistema. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
