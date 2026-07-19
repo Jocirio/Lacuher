@@ -7,9 +7,16 @@
     todas as permissões necessárias para GPS, Bluetooth, Wi-Fi e para
     conseguir abrir apps de terceiros instalados (Waze, Google Maps, Spotify).
 -->
+<!--
+    O namespace do módulo (equivalente ao antigo atributo "package" abaixo)
+    agora é definido só em android/app/build.gradle (gerado automaticamente
+    pelo `flutter create --org com.neoncar ...` no workflow). O Android
+    Gradle Plugin 8+ não aceita mais declarar o pacote aqui — se declarado,
+    o build falha com "Setting the namespace via the package attribute in
+    the source AndroidManifest.xml is no longer supported".
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.neoncar.launcher">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- ==================== PERMISSÕES ==================== -->
 
@@ -94,7 +101,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- >>> INTERCEPTAÇÃO DO BOTÃO HOME <<<
+            <!-- >>> INTERCEPTAÇÃO DO BOTÃO HOME <
                  Esta é a categoria que faz o app se registrar como
                  "tela inicial" da multimídia, concorrendo com (ou
                  substituindo) o launcher padrão do sistema. -->
