@@ -3,7 +3,7 @@ package __PACKAGE__
 // MainActivity.kt
 //
 // Substitui o MainActivity.kt padrão gerado pelo `flutter create`. Adiciona
-// dois canais nativos que não têm pacote Flutter pronto no pub.dev:
+// três canais nativos que não têm pacote Flutter pronto no pub.dev:
 //
 // 1. "com.neoncar.launcher/telecom" — atender/encerrar chamada usando
 //    TelecomManager. Isso funciona em apps comuns (não precisa ser o
@@ -21,12 +21,19 @@ package __PACKAGE__
 // direto, sem passar pelo Android) — nesse caso, nenhum código aqui é
 // necessário, a central já troca sozinha. Este canal só é útil se a SUA
 // central específica expõe esse evento como um broadcast Android.
+//
+// 3. "com.neoncar.launcher/media" — recebe (via broadcast local) os
+//    metadados de mídia publicados pelo CarMediaListenerService.kt (título/
+//    artista/estado tocando-pausado da sessão ativa, ex: Spotify) e repassa
+//    para o Flutter. Também expõe "openNotificationSettings" para abrir a
+//    tela do sistema onde o usuário concede "Acesso a notificações".
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.provider.Settings
 import android.telecom.TelecomManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -35,10 +42,14 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val telecomChannelName = "com.neoncar.launcher/telecom"
     private val reverseChannelName = "com.neoncar.launcher/reverse"
+    private val mediaChannelName = "com.neoncar.launcher/media"
 
     private var reverseChannel: MethodChannel? = null
     private var reverseReceiver: BroadcastReceiver? = null
     private var registeredAction: String? = null
+
+    private var mediaChannel: MethodChannel? = null
+    private var mediaReceiver: BroadcastReceiver? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -89,7 +100,7 @@ class MainActivity : FlutterActivity() {
                             reverseChannel?.invokeMethod("onReverseTriggered", null)
                         }
                     }
-                    registerReceiver(reverseReceiver, IntentFilter(action))
+                    registerAppReceiver(reverseReceiver, IntentFilter(action))
                     result.success(true)
                 }
                 "unregister" -> {
@@ -98,6 +109,52 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
+        }
+
+        mediaChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, mediaChannelName)
+        mediaChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "requestCurrent" -> {
+                    // O CarMediaListenerService reenvia o estado atual sozinho
+                    // quando se conecta (onListenerConnected); aqui só
+                    // confirmamos que o canal está pronto.
+                    result.success(true)
+                }
+                "openNotificationSettings" -> {
+                    try {
+                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("CANNOT_OPEN", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        mediaReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val map = HashMap<String, Any?>()
+                map["title"] = intent?.getStringExtra("title")
+                map["artist"] = intent?.getStringExtra("artist")
+                map["isPlaying"] = intent?.getBooleanExtra("isPlaying", false) ?: false
+                mediaChannel?.invokeMethod("onMediaChanged", map)
+            }
+        }
+        registerAppReceiver(mediaReceiver, IntentFilter("com.neoncar.launcher.MEDIA_CHANGED"))
+    }
+
+    /// Registra um BroadcastReceiver interno ao app. A partir do Android 13
+    /// (API 33) é obrigatório declarar explicitamente se o receiver pode
+    /// receber broadcasts de outros apps (EXPORTED) ou só do próprio app
+    /// (NOT_EXPORTED) — usamos NOT_EXPORTED pois esses broadcasts são só
+    /// para comunicação interna do launcher.
+    private fun registerAppReceiver(receiver: BroadcastReceiver?, filter: IntentFilter) {
+        if (receiver == null) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(receiver, filter)
         }
     }
 
@@ -112,8 +169,20 @@ class MainActivity : FlutterActivity() {
         reverseReceiver = null
     }
 
+    private fun unregisterMediaReceiver() {
+        mediaReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (e: IllegalArgumentException) {
+                // já estava desregistrado — sem problema.
+            }
+        }
+        mediaReceiver = null
+    }
+
     override fun onDestroy() {
         unregisterReverseReceiver()
+        unregisterMediaReceiver()
         super.onDestroy()
     }
 }
