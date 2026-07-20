@@ -31,13 +31,15 @@ jobs:
           rm -rf project/assets
           cp -r payload/assets project/assets
 
-      - name: Injeta o MainActivity.kt nativo (chamadas e sinal de ré) com o pacote correto
+      - name: Injeta o MainActivity.kt e o CarMediaListenerService.kt nativos com o pacote correto
         run: |
           GENERATED_MAIN_ACTIVITY=$(find project/android -name "MainActivity.kt" | head -n1)
           echo "MainActivity gerado em: $GENERATED_MAIN_ACTIVITY"
+          TARGET_DIR=$(dirname "$GENERATED_MAIN_ACTIVITY")
           PACKAGE_NAME=$(grep -m1 '^package ' "$GENERATED_MAIN_ACTIVITY" | sed 's/^package //')
           echo "Pacote detectado: $PACKAGE_NAME"
           sed "s/__PACKAGE__/$PACKAGE_NAME/" payload/android/MainActivity.kt > "$GENERATED_MAIN_ACTIVITY"
+          sed "s/__PACKAGE__/$PACKAGE_NAME/" payload/android/CarMediaListenerService.kt > "$TARGET_DIR/CarMediaListenerService.kt"
 
       - name: Baixa as dependências do projeto
         working-directory: project
