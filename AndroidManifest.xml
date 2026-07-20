@@ -113,6 +113,21 @@
 
         </activity>
 
+        <!-- Servico de "acesso a notificacoes" so para ler METADADOS de midia
+             (titulo/artista/tocando-pausado) de outros apps, ex: Spotify, e
+             mostrar no velocimetro de midia. Nao le conteudo de notificacoes.
+             Precisa ser habilitado manualmente pelo usuario em Configuracoes
+             do sistema (o app tem um atalho para essa tela). -->
+        <service
+            android:name=".CarMediaListenerService"
+            android:label="Neon Car Launcher - Midia"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
