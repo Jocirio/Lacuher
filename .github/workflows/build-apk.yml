@@ -41,6 +41,12 @@ jobs:
           sed "s/__PACKAGE__/$PACKAGE_NAME/" payload/android/MainActivity.kt > "$GENERATED_MAIN_ACTIVITY"
           sed "s/__PACKAGE__/$PACKAGE_NAME/" payload/android/CarMediaListenerService.kt > "$TARGET_DIR/CarMediaListenerService.kt"
 
+      - name: Usa sempre a mesma chave de assinatura de debug (evita builds com assinaturas diferentes)
+        run: |
+          mkdir -p "$HOME/.android"
+          base64 -d payload/android/debug_keystore_base64.txt > "$HOME/.android/debug.keystore"
+          echo "Chave de debug fixa instalada em $HOME/.android/debug.keystore"
+
       - name: Baixa as dependências do projeto
         working-directory: project
         run: flutter pub get
