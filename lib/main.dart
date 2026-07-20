@@ -14,14 +14,15 @@
 //   7. ConnectivityMonitor  -> status real de Wi-Fi (connectivity_plus) e
 //                              Bluetooth (flutter_blue_plus)
 //   8. AppDock              -> botões que abrem Waze / Google Maps / Spotify reais
-//   9. OfflineMapScreen     -> flutter_map lendo tiles locais em
-//                              assets/map_tiles/{z}/{x}/{y}.png
+//   9. OfflineMapScreen     -> flutter_map lendo tiles de um arquivo
+//                              .mbtiles (gerado no MOBAC) ou do tile de
+//                              exemplo embutido em assets/map_tiles/
 //  10. SettingsScreen       -> seletor de cor neon (Roxo / Ciano / Esmeralda)
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1719,37 +1720,110 @@ class _DockButton extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// 8) MAPA OFFLINE — tiles locais em assets/map_tiles/{z}/{x}/{y}.png
+// 8) MAPA OFFLINE — tiles lidos de um arquivo .mbtiles gerado pelo MOBAC
 // ---------------------------------------------------------------------------
+//
+// MBTiles é um formato padrão (especificação aberta da Mapbox) para guardar
+// um mapa inteiro em UM ÚNICO arquivo SQLite, em vez de milhares de arquivos
+// PNG soltos em pastas — muito mais fácil de gerar (o MOBAC exporta direto
+// nesse formato, é só escolher "MBTiles" na lista de formatos de atlas) e de
+// copiar para o celular/pendrive.
+//
+// Esquema padrão MBTiles: tabela `tiles` com colunas zoom_level, tile_column
+// (=x) e tile_row. IMPORTANTE: tile_row usa o esquema TMS, que numera as
+// linhas de baixo para cima — o oposto do esquema XYZ que o flutter_map usa.
+// Por isso a conversão `tmsY = (1 << z) - 1 - y` abaixo é necessária; sem
+// ela o mapa aparece "de cabeça para baixo".
+class MbtilesTileProvider extends TileProvider {
+  MbtilesTileProvider({this.filePath});
 
-/// Fornece tiles 100% offline, sem qualquer dependência de rede, a partir de
-/// DUAS fontes possíveis:
-///
-///  1. Uma pasta externa (SD/pendrive) escolhida pelo usuário em
-///     Configurações — permite trocar/ampliar a cobertura do mapa (ex: de
-///     Mato Grosso para o Brasil inteiro) só copiando novos tiles para o
-///     dispositivo, sem precisar recompilar o APK.
-///  2. Os assets embutidos no próprio APK (assets/map_tiles/), usados como
-///     padrão quando nenhuma pasta externa foi configurada.
-class HybridTileProvider extends TileProvider {
-  HybridTileProvider({this.externalBasePath});
+  /// Caminho absoluto de um arquivo .mbtiles. Quando nulo, cai para o tile
+  /// de exemplo embutido no APK (assets/map_tiles/).
+  final String? filePath;
 
-  /// Caminho absoluto de uma pasta contendo tiles em {z}/{x}/{y}.png.
-  /// Quando nulo, cai para os assets embutidos no APK.
-  final String? externalBasePath;
+  sqlite.Database? _db;
+  Future<sqlite.Database>? _dbOpening;
+
+  Future<sqlite.Database> _openDb() {
+    final path = filePath;
+    if (path == null) throw StateError('Nenhum arquivo .mbtiles configurado');
+    return _dbOpening ??= sqlite.openDatabase(path, readOnly: true).then((db) {
+      _db = db;
+      return db;
+    });
+  }
 
   @override
   ImageProvider getImage(TileCoordinates coordinates, TileLayer options) {
-    final z = coordinates.z;
-    final x = coordinates.x;
-    final y = coordinates.y;
-
-    final base = externalBasePath;
-    if (base != null && base.isNotEmpty) {
-      return FileImage(File('$base/$z/$x/$y.png'));
+    final path = filePath;
+    if (path == null || path.isEmpty) {
+      return AssetImage('assets/map_tiles/${coordinates.z}/${coordinates.x}/${coordinates.y}.png');
     }
-    return AssetImage('assets/map_tiles/$z/$x/$y.png');
+    return _MbtilesImageProvider(
+      openDb: _openDb,
+      z: coordinates.z,
+      x: coordinates.x,
+      y: coordinates.y,
+    );
   }
+
+  void dispose() {
+    _db?.close();
+  }
+}
+
+class _MbtilesImageProvider extends ImageProvider<_MbtilesImageProvider> {
+  const _MbtilesImageProvider({
+    required this.openDb,
+    required this.z,
+    required this.x,
+    required this.y,
+  });
+
+  final Future<sqlite.Database> Function() openDb;
+  final int z;
+  final int x;
+  final int y;
+
+  @override
+  Future<_MbtilesImageProvider> obtainKey(ImageConfiguration configuration) {
+    return SynchronousFuture<_MbtilesImageProvider>(this);
+  }
+
+  @override
+  ImageStreamCompleter loadImage(_MbtilesImageProvider key, ImageDecoderCallback decode) {
+    return MultiFrameImageStreamCompleter(
+      codec: _loadTile(decode),
+      scale: 1.0,
+      debugLabel: 'mbtiles $z/$x/$y',
+    );
+  }
+
+  Future<ui.Codec> _loadTile(ImageDecoderCallback decode) async {
+    final db = await openDb();
+    // Conversao XYZ -> TMS (ver comentario no MbtilesTileProvider acima).
+    final tmsY = (1 << z) - 1 - y;
+    final rows = await db.query(
+      'tiles',
+      columns: ['tile_data'],
+      where: 'zoom_level = ? AND tile_column = ? AND tile_row = ?',
+      whereArgs: [z, x, tmsY],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      throw Exception('Tile $z/$x/$y não encontrado no arquivo .mbtiles');
+    }
+    final bytes = rows.first['tile_data'] as Uint8List;
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    return decode(buffer);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _MbtilesImageProvider && other.z == z && other.x == x && other.y == y;
+
+  @override
+  int get hashCode => Object.hash(z, x, y);
 }
 
 class OfflineMapScreen extends StatelessWidget {
@@ -1762,7 +1836,7 @@ class OfflineMapScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppStateScope.of(context);
     final neon = appState.palette.color;
-    final mapFolder = appState.mapFolderPath;
+    final mapFile = appState.mapFolderPath;
 
     return Scaffold(
       appBar: AppBar(
@@ -1781,20 +1855,21 @@ class OfflineMapScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  mapFolder == null
+                  mapFile == null
                       ? 'Nenhum mapa real instalado ainda — o app só tem um '
                           'tile de exemplo embutido, por isso a tela abaixo '
                           'aparece em branco.'
-                      : 'Usando pasta externa: $mapFolder',
+                      : 'Usando arquivo: $mapFile',
                   style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),
-                if (mapFolder == null) ...[
+                if (mapFile == null) ...[
                   const SizedBox(height: 6),
                   Text(
-                    'Gere os tiles da sua região com o MOBAC (gratuito, no '
-                    'PC), copie a pasta gerada para o celular/pendrive e '
-                    'aponte para ela em Configurações → Pasta de mapas '
-                    'offline. Não recompila o app. Detalhes no README.',
+                    'Gere um arquivo .mbtiles da sua região com o MOBAC '
+                    '(gratuito, no PC — escolha o formato de atlas '
+                    '"MBTiles"), copie esse arquivo para o celular/pendrive '
+                    'e aponte para ele em Configurações → Mapa offline. Não '
+                    'precisa recompilar o app. Detalhes no README.',
                     style: TextStyle(color: neon.withOpacity(0.85), fontSize: 12),
                   ),
                 ],
@@ -1811,9 +1886,9 @@ class OfflineMapScreen extends StatelessWidget {
               ),
               children: [
                 TileLayer(
-                  tileProvider: HybridTileProvider(externalBasePath: mapFolder),
+                  tileProvider: MbtilesTileProvider(filePath: mapFile),
                   // Nenhuma urlTemplate de rede: os tiles vêm 100% do local
-                  // (pasta externa ou assets embutidos).
+                  // (arquivo .mbtiles ou assets embutidos).
                   urlTemplate: '{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.neoncar.launcher',
                   errorTileCallback: (tile, error, stackTrace) {
@@ -2004,17 +2079,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // permissão especial "Acesso a todos os arquivos".
       await Permission.manageExternalStorage.request();
 
-      final path = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: 'Selecione a pasta com os tiles do mapa',
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: 'Selecione o arquivo .mbtiles do mapa',
+        type: FileType.custom,
+        allowedExtensions: ['mbtiles'],
       );
+      final path = result?.files.single.path;
       if (path == null) return; // usuário cancelou
       _folderController.text = path;
       await appState.setMapFolderPath(path);
-      setState(() => _feedback = 'Pasta de mapas atualizada.');
+      setState(() => _feedback = 'Arquivo de mapa atualizado.');
     } catch (e) {
-      // Em algumas centrais/ROMs automotivas o seletor de pastas do sistema
-      // pode não estar disponível — nesse caso, use o campo de texto acima
-      // para colar o caminho manualmente (ex: /storage/6331-6162/NeonMaps).
+      // Em algumas centrais/ROMs automotivas o seletor de arquivos do
+      // sistema pode não estar disponível — nesse caso, use o campo de
+      // texto acima para colar o caminho manualmente.
       setState(() => _feedback =
           'Não foi possível abrir o seletor automático. Cole o caminho manualmente no campo acima.');
     }
@@ -2025,7 +2103,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await appState.setMapFolderPath(path.isEmpty ? null : path);
     setState(() => _feedback = path.isEmpty
         ? 'Voltando a usar os tiles embutidos no APK.'
-        : 'Pasta de mapas salva: $path');
+        : 'Arquivo de mapa salvo: $path');
   }
 
   @override
@@ -2085,14 +2163,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             );
           }),
           const SizedBox(height: 32),
-          const Text('Pasta de mapas offline',
+          const Text('Mapa offline (.mbtiles)',
               style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           const Text(
-            'Aponte para uma pasta (SD/pendrive) com tiles no padrão '
-            '{z}/{x}/{y}.png para trocar ou ampliar a cobertura do mapa '
-            '(ex: de Mato Grosso para o Brasil inteiro) sem recompilar o app. '
-            'Deixe em branco para usar os tiles já embutidos no APK.',
+            'Aponte para um arquivo .mbtiles (gerado no MOBAC, no PC) para '
+            'trocar ou ampliar a cobertura do mapa — ex: de Mato Grosso para '
+            'o Brasil inteiro — sem recompilar o app. Deixe em branco para '
+            'usar o tile de exemplo embutido no APK.',
             style: TextStyle(color: Colors.white38, fontSize: 12),
           ),
           const SizedBox(height: 14),
@@ -2100,7 +2178,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             controller: _folderController,
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
-              hintText: '/storage/6331-6162/NeonMaps',
+              hintText: '/storage/6331-6162/brasil.mbtiles',
               hintStyle: const TextStyle(color: Colors.white24),
               filled: true,
               fillColor: Colors.white.withOpacity(0.04),
@@ -2121,7 +2199,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: OutlinedButton.icon(
                   onPressed: () => _pickFolderAutomatically(appState),
                   icon: Icon(Icons.folder_open, color: neon),
-                  label: Text('Selecionar pasta', style: TextStyle(color: neon)),
+                  label: Text('Selecionar arquivo', style: TextStyle(color: neon)),
                   style: OutlinedButton.styleFrom(side: BorderSide(color: neon.withOpacity(0.5))),
                 ),
               ),
